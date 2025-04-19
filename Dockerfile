@@ -3,7 +3,7 @@ FROM golang:1.24-alpine
 ENV DERP_IP=
 
 VOLUME /etc/derper/certs
-VOLUME /var/run/tailscale/
+VOLUME /var/run/tailscale/tailscaled.sock
 
 EXPOSE 80/tcp 443/tcp 3478/udp
 
