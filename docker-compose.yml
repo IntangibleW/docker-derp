@@ -1,0 +1,25 @@
+services:
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: tailscale
+    restart: unless-stopped
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_HOSTNAME=docker-derp
+    volumes:
+      - socket:/var/run/tailscale/tailscaled.sock
+      - ./certs:/etc/derper/certs
+  derp:
+    build: .
+    container_name: derp
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "3478:3478/udp"
+    environment:
+      - DERP_IP=127.0.0.1
+    volumes:
+      - socket:/var/run/tailscale/tailscaled.sock
+volumes:
+  socket:
