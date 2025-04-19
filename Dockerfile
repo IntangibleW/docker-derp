@@ -13,7 +13,7 @@ COPY --from=derper /go/bin/derper /usr/local/bin/derper
 RUN apk add --no-cache openssl && \
         mkdir -p /tailscale/derper-certs
 
-CMD ["sh", "-c", "openssl req -new -newkey rsa:4096 -days 3650 -nodes -x509 \
+CMD ["sh", "-c", "openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
         -subj \"/CN=${DERP_IP}\" \
         -addext \"subjectAltName=IP:${DERP_IP}\" \
         -keyout /tailscale/derper-certs/${DERP_IP}.key \
