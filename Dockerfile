@@ -1,7 +1,7 @@
 FROM golang:alpine AS builder
 
-RUN go install tailscale.com/cmd/derper@main
-RUN go install tailscale.com/cmd/derpprobe@main
+RUN go install tailscale.com/cmd/derper@latest
+RUN go install tailscale.com/cmd/derpprobe@latest
 
 FROM alpine
 

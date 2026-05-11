@@ -1,0 +1,112 @@
+name: Publish ACR
+
+on:
+  workflow_run:
+    workflows:
+      - Build GHCR on Tailscale Latest
+    types:
+      - completed
+  workflow_dispatch:
+    inputs:
+      tailscale_version:
+        description: 'Tailscale module version, for example v1.84.0. Empty means Go module latest.'
+        required: false
+
+env:
+  ACR_REGISTRY: ${{ vars.ACR_REGISTRY }}
+  ACR_NAMESPACE: ${{ vars.ACR_NAMESPACE }}
+  ACR_REPOSITORY: ${{ vars.ACR_REPOSITORY || 'derp' }}
+
+jobs:
+  publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: stable
+
+      - name: Resolve Tailscale module version
+        id: tailscale
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.tailscale_version }}
+        run: |
+          if [ -n "$INPUT_VERSION" ]; then
+            version="$INPUT_VERSION"
+          else
+            version="$(go list -m -json tailscale.com@latest | jq -r '.Version')"
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve image names
+        id: image
+        env:
+          TAILSCALE_VERSION: ${{ steps.tailscale.outputs.version }}
+        run: |
+          package_repository="$(echo "ghcr.io/${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          package="${package_repository}:${TAILSCALE_VERSION}"
+          image="${ACR_REGISTRY}/${ACR_NAMESPACE}/${ACR_REPOSITORY}:${TAILSCALE_VERSION}"
+          latest="${ACR_REGISTRY}/${ACR_NAMESPACE}/${ACR_REPOSITORY}:latest"
+
+          echo "package=$package" >> "$GITHUB_OUTPUT"
+          echo "name=$image" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Check ACR configuration
+        id: acr_config
+        env:
+          ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
+          ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
+        run: |
+          if [ -n "$ACR_REGISTRY" ] && \
+             [ -n "$ACR_NAMESPACE" ] && \
+             [ -n "$ACR_REPOSITORY" ] && \
+             [ -n "$ACR_USERNAME" ] && \
+             [ -n "$ACR_PASSWORD" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to GitHub Container Registry
+        if: steps.acr_config.outputs.enabled == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to ACR
+        if: steps.acr_config.outputs.enabled == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.ACR_REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Set up Docker Buildx
+        if: steps.acr_config.outputs.enabled == 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Check whether ACR image tag already exists
+        if: steps.acr_config.outputs.enabled == 'true'
+        id: acr
+        run: |
+          if docker buildx imagetools inspect "${{ steps.image.outputs.name }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Publish image to ACR
+        if: steps.acr_config.outputs.enabled == 'true' && steps.acr.outputs.exists != 'true'
+        run: |
+          docker buildx imagetools create \
+            --tag "${{ steps.image.outputs.name }}" \
+            --tag "${{ steps.image.outputs.latest }}" \
+            "${{ steps.image.outputs.package }}"
