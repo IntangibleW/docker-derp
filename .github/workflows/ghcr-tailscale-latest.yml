@@ -9,6 +9,9 @@ on:
         description: 'Tailscale module version, for example v1.84.0. Empty means Go module latest.'
         required: false
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -25,6 +28,7 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version: stable
+          cache: false
 
       - name: Resolve Tailscale module version
         id: tailscale
